@@ -7,8 +7,8 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.svm import SVR
 from sklearn import metrics
-
-
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
 
 
 
@@ -21,26 +21,44 @@ train_target=train.loc[:,"energy"]
 test_target=test.loc[:,"energy"]
 
 
-train1=train.iloc[:,0:75]
+
+
+
+
+train_train=train.iloc[:3650,0:75]
+train_validation=train.iloc[3650:,0:75]
 test1=test.iloc[:,0:75]
 
-modeloknn=KNeighborsRegressor()
-modeloknn.fit(train1,train_target)
 
-## hhhh=modelo1.predict(test1)
+train_target_train=train_target.iloc[:3650]
+train_target_validation=train_target.iloc[3650:]
+
+
+
+pipeKNN = make_pipeline(StandardScaler(), KNeighborsRegressor())
+pipeKNN.fit(train_train,train_target_train)
+knn_pred=pipeKNN.predict(train_validation)
+
+
+
 
 
 modelotree=DecisionTreeRegressor()
-modelotree.fit(train1,train_target)
+modelotree.fit(train_train,train_target_train)
+tree_pred=modelotree.predict(train_validation)
 
-## hhhh=modelotree.predict(test1)
 
-modelosvm=SVR()
-modelosvm.fit(train1,train_target)
+pipeSVR = make_pipeline(StandardScaler(), SVR())
+pipeSVR.fit(train_train,train_target_train)
+SVR_pred=pipeSVR.predict(train_validation)
+
+
+
+metrics.mean_absolute_error(knn_pred,train_target_validation)
+
+metrics.mean_absolute_error(tree_pred,train_target_validation)
+
+metrics.mean_absolute_error(SVR_pred,train_target_validation)
 
 
 ##### Evaluando
-
-
-
-
