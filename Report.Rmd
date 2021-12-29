@@ -30,8 +30,11 @@ import numpy as np
 
 We first separate the training data in training and validation data, note that the data is time ordered and the construction of the validation set must respect that ordering 
 
+### Split the train data into train_train (10 years) and train_validation (2 years). The validation set (train_validation) will be used to compare all six approaches in this section.
 
 ```{python}
+my_NIA =80762238
+np.random.seed(my_NIA)
 train = pd.read_pickle('/home/andres/AdprogSKlearn/traintestdata_pickle/trainst1ns16.pkl')
 test = pd.read_pickle('/home/andres/AdprogSKlearn/traintestdata_pickle/testst1ns16.pkl')
 train_target=train.loc[:,"energy"]
@@ -47,20 +50,41 @@ train_target_validation=train_target.iloc[3650:]
 
 Doing the models with the default parameters and using the validation set to evaluate them:
 
+### Train and evaluate KNN, SVM, and Regression Trees with default hyper-parameters.
+Remember that KNN and SVM require scaling.
 
-```{python}
-pipeKNN = make_pipeline(StandardScaler(), KNeighborsRegressor(p=1))
+
+KNN model
+
+```{python, results=FALSE}
+
+pipeKNN = make_pipeline(StandardScaler(), KNeighborsRegressor())
 pipeKNN.fit(train_train,train_target_train)
 knn_pred=pipeKNN.predict(train_validation)
+
+
+```
+
+Tree model
+
+```{python, results=FALSE}
 
 modelotree=DecisionTreeRegressor()
 modelotree.fit(train_train,train_target_train)
 tree_pred=modelotree.predict(train_validation)
 
+```
+
+
+SVR model
+
+```{python, results=FALSE}
 pipeSVR = make_pipeline(StandardScaler(), SVR())
 pipeSVR.fit(train_train,train_target_train)
 SVR_pred=pipeSVR.predict(train_validation)
+```
 
+```{python}
 metrics.mean_absolute_error(knn_pred,train_target_validation)
 metrics.mean_absolute_error(tree_pred,train_target_validation)
 metrics.mean_absolute_error(SVR_pred,train_target_validation)
@@ -70,46 +94,44 @@ From this it seems that the model that has the lowest mean absolute error is k-n
 
 ## Tuning Hyperparameters
 
+Tree model
+* Tree model only change mae es criterion (to be consistant with evaluation)
 ```{python}
+
 train_cv_index=np.zeros(train.shape[0])
 
 train_cv_index[:3650] = -1
 train_cv_index = PredefinedSplit(train_cv_index)
 n_estimators = [int(x) for x in np.linspace(start = 1, stop = 20, num = 20)] # number of trees in the random forest
-max_features = ['auto', 'sqrt'] # number of features in consideration at every split
+max_features = ['log2', 'sqrt'] # number of features in consideration at every split
 max_depth = [int(x) for x in np.linspace(10, 120, num = 12)] # maximum number of levels allowed in each decision tree
 min_samples_split = [2, 6, 10] # minimum sample number to split a node
 min_samples_leaf = [1, 3, 4] # minimum sample number that can be stored in a leaf node
 bootstrap = [True, False] # method used to sample data points
 random_grid = {
     #'n_estimators': n_estimators,
-
 'max_features': max_features,
-
 'max_depth': max_depth,
-
 'min_samples_split': min_samples_split,
+'min_samples_leaf': min_samples_leaf
+}
 
-'min_samples_leaf': min_samples_leaf}
-
-rf_random = RandomizedSearchCV(estimator = modelotree,
-    param_distributions = random_grid,
-               n_iter = 100, cv = train_cv_index, verbose=2, random_state=35, n_jobs = -1,
-               scoring="neg_mean_absolute_error")
-
-
+rf_random = RandomizedSearchCV(estimator = modelotree,  param_distributions =
+    random_grid, n_iter = 100, cv = train_cv_index, verbose=2, random_state=35,
+    n_jobs = -1, scoring="neg_mean_absolute_error")
 ```
 
+Comparison tree default vs optimized in validation set!
+
 ```{python}
-
-
 rf_random.fit(train.iloc[:,0:75],train_target)
 rf_random_pred=rf_random.predict(train_validation)
-
 
 metrics.mean_absolute_error(tree_pred,train_target_validation)
 metrics.mean_absolute_error(rf_random_pred,train_target_validation)
 ```
+
+We found no way to align the training metric with mean absolute error
 
 
 ```{python}
@@ -126,12 +148,9 @@ random_grid = {
    "C":C,
    "shrinking":shrinking}
 
-
-
 scaler1=StandardScaler().fit(train_train,train_target_train)
 train_train_st=scaler1.transform(train_train)
 train_st=scaler1.transform(train.iloc[:,0:75])
-
 
 SVR_estimatorS=SVR()
 rs_svr = RandomizedSearchCV(estimator = SVR_estimatorS,
@@ -139,15 +158,19 @@ rs_svr = RandomizedSearchCV(estimator = SVR_estimatorS,
     n_iter = 100, 
     cv = train_cv_index,
     verbose=2, random_state=35, n_jobs = -1,scoring="neg_mean_absolute_error")
+```
 
+Comparison knn default vs optimized in validation set!
+
+```{python}
 rs_svr.fit(train_st,train_target)
-
 SVR_pred_2=rs_svr.predict(scaler1.transform(train_validation))
-
 
 metrics.mean_absolute_error(SVR_pred,train_target_validation)
 metrics.mean_absolute_error(SVR_pred_2,train_target_validation)
 ```
+
+* knn p=1 minkwoski distance equal one  so it is consinstrant wieht mean absolute error.
 
 
 ```{python}
@@ -171,20 +194,44 @@ param_grid={
 knn_estimator_cv=KNeighborsRegressor()
 
 
-
-
 rs_knn = GridSearchCV(estimator =knn_estimator_cv, param_grid=param_grid,
                        cv = train_cv_index, verbose=2, 
                       n_jobs = -1,scoring="neg_mean_absolute_error")
 
+```
 
+Compraring knn default vs optimized
 
-
+```{python}
 
 rs_knn.fit(train_st,train_target)
-
 Knn_pred_2=rs_knn.predict(scaler1.transform(train_validation))
+
+metrics.mean_absolute_error(knn_pred,train_target_validation)
+metrics.mean_absolute_error(Knn_pred_2,train_target_validation)
+```
+
+Tablita de resumen para mostrar que el mejor es knn con tuning 1743230.4429920174
+
+## Model evaluation: the method that was selected in model selection will be evaluated
+on the test set
+
+
+```{python}
+tree_test=rf_random.predict(scaler1.transform(test.iloc[:,0:75]))
+metrics.mean_absolute_error(tree_test,test_target)
 
 
 ```
+## final model training 
 
+```{python}
+
+totaldata=train.append(test)
+final_model_params=rf_random.best_params_
+#final_scaling=StandardScaler().fit(X=totaldata.iloc[0:75])
+#final_data_transformed=final_scaling.transform(X=totaldata.iloc[0:75])
+modelofinal=DecisionTreeRegressor(**final_model_params)
+modelofinal.fit(totaldata.iloc[:,0:75],totaldata.loc[:,"energy"])
+modelofinal
+```
