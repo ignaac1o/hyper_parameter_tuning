@@ -69,7 +69,7 @@ Tree model
 
 ```{python, results=FALSE}
 
-modelotree=DecisionTreeRegressor()
+modelotree=DecisionTreeRegressor(random_state=1)
 modelotree.fit(train_train,train_target_train)
 tree_pred=modelotree.predict(train_validation)
 
@@ -231,7 +231,7 @@ totaldata=train.append(test)
 final_model_params=rf_random.best_params_
 #final_scaling=StandardScaler().fit(X=totaldata.iloc[0:75])
 #final_data_transformed=final_scaling.transform(X=totaldata.iloc[0:75])
-modelofinal=DecisionTreeRegressor(**final_model_params)
+modelofinal=DecisionTreeRegressor(**final_model_params,random_state=1)
 modelofinal.fit(totaldata.iloc[:,0:75],totaldata.loc[:,"energy"])
 modelofinal
 ```
