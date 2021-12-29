@@ -1,7 +1,7 @@
 ---
-title: "Project 2 Part 1"
-author: "Andres Mejia"
-date: "12/27/2021"
+title: "Comparing the Performance using Solar Energy Production Data"
+author: "Andres Mejia & Ignacio Almodovar"
+date: "01/04/2022"
 output: pdf_document
 ---
 
@@ -28,9 +28,9 @@ import numpy as np
 
 ## Data preprocessing
 
-We first separate the training data in training and validation data, note that the data is time ordered and the construction of the validation set must respect that ordering 
+We first split the training data into training and validation data. As the data is time ordered,the construction of the validation set must respect that ordering. The training set consists on the fist 3650 rows in the training set (roughly 10 years of data), and the validation set 730 that is a little more than 2 years of daily data. We will also only use the first 75 columns of the dataset as directed in the problem.
 
-### Split the train data into train_train (10 years) and train_validation (2 years). The validation set (train_validation) will be used to compare all six approaches in this section.
+
 
 ```{python}
 my_NIA =80762238
@@ -48,24 +48,11 @@ train_target_validation=train_target.iloc[3650:]
 
 ## Models using default parameters
 
-Doing the models with the default parameters and using the validation set to evaluate them:
+We will first train the models using the default hyper-parameters.
 
-### Train and evaluate KNN, SVM, and Regression Trees with default hyper-parameters.
-Remember that KNN and SVM require scaling.
+### Tree model
 
-
-KNN model
-
-```{python, results=FALSE}
-
-pipeKNN = make_pipeline(StandardScaler(), KNeighborsRegressor())
-pipeKNN.fit(train_train,train_target_train)
-knn_pred=pipeKNN.predict(train_validation)
-
-
-```
-
-Tree model
+This model doesn't need scaling but a random state is added for reproducibility.
 
 ```{python, results=FALSE}
 
@@ -75,8 +62,21 @@ tree_pred=modelotree.predict(train_validation)
 
 ```
 
+### KNN model
 
-SVR model
+This model requieres scaling, it will be implemented in a pipeline.
+
+```{python, results=FALSE}
+
+pipeKNN = make_pipeline(StandardScaler(), KNeighborsRegressor())
+pipeKNN.fit(train_train,train_target_train)
+knn_pred=pipeKNN.predict(train_validation)
+```
+
+
+### SVR model
+
+As KNN this model also requieres scaling and is implemented in a pipeline.
 
 ```{python, results=FALSE}
 pipeSVR = make_pipeline(StandardScaler(), SVR())
@@ -84,59 +84,117 @@ pipeSVR.fit(train_train,train_target_train)
 SVR_pred=pipeSVR.predict(train_validation)
 ```
 
+Now comparing the MAE of each model in the validation set we get:
+
 ```{python}
 metrics.mean_absolute_error(knn_pred,train_target_validation)
 metrics.mean_absolute_error(tree_pred,train_target_validation)
 metrics.mean_absolute_error(SVR_pred,train_target_validation)
 ```
 
-From this it seems that the model that has the lowest mean absolute error is k-nearest neighbors regression.
+The model that has the lowest mean absolute error in the validation set without any hyperparameter tuning is the k-nearest neighbors regression.
 
 ## Tuning Hyperparameters
 
-Tree model
-* Tree model only change mae es criterion (to be consistant with evaluation)
+###  Tuning methodology
+
+We will use the validation set to evaluate the hypertuning of parameters, instead of separating the sets we will use the function *PredefinedSplit* to mark the same rows as validation. 
+
 ```{python}
 
 train_cv_index=np.zeros(train.shape[0])
-
 train_cv_index[:3650] = -1
 train_cv_index = PredefinedSplit(train_cv_index)
-n_estimators = [int(x) for x in np.linspace(start = 1, stop = 20, num = 20)] # number of trees in the random forest
-max_features = ['log2', 'sqrt'] # number of features in consideration at every split
-max_depth = [int(x) for x in np.linspace(10, 120, num = 12)] # maximum number of levels allowed in each decision tree
-min_samples_split = [2, 6, 10] # minimum sample number to split a node
-min_samples_leaf = [1, 3, 4] # minimum sample number that can be stored in a leaf node
-bootstrap = [True, False] # method used to sample data points
+```
+### Tree Regressor
+
+We define the search space as follows, we use *RandomizedSearchCV* to find the best hyperparameters.  We also used absolute mean error as metric in the validation set in order to be consistant in the hyperparameter search.
+
+```{python}
+
+max_features = ['log2', 'sqrt'] 
+max_depth = [int(x) for x in np.linspace(1, 29, num = 12)] 
+min_samples_split = [2, 6, 10] 
+min_samples_leaf = [1, 3, 4]
 random_grid = {
-    #'n_estimators': n_estimators,
-'max_features': max_features,
-'max_depth': max_depth,
-'min_samples_split': min_samples_split,
-'min_samples_leaf': min_samples_leaf
-}
+  'max_features': max_features,
+  'max_depth': max_depth,
+  'min_samples_split': min_samples_split,
+  'min_samples_leaf': min_samples_leaf,
+  'criterion':["mae"]
+  }
 
 rf_random = RandomizedSearchCV(estimator = modelotree,  param_distributions =
     random_grid, n_iter = 100, cv = train_cv_index, verbose=2, random_state=35,
     n_jobs = -1, scoring="neg_mean_absolute_error")
 ```
 
-Comparison tree default vs optimized in validation set!
+Comparing the results in the validation set we can see that the model with tuning has a lower absolute mean deviation.
 
-```{python}
+```{python, results=FALSE}
 rf_random.fit(train.iloc[:,0:75],train_target)
 rf_random_pred=rf_random.predict(train_validation)
+```
 
+```{python}
 metrics.mean_absolute_error(tree_pred,train_target_validation)
 metrics.mean_absolute_error(rf_random_pred,train_target_validation)
 ```
 
-We found no way to align the training metric with mean absolute error
+### KNN regression.
+
+For KNN there are a couple of changes, first we use *GridSearchCV* instead of *RandomizedSearchCV* to find the best hyperparameters. We also set the metric of the training to *p=1* so it uses the same metric in training.
 
 
 ```{python}
 
-# USing SVMs
+n_neighbors=[3,4,5,6,7]
+weight=["uniform","distance"]
+algorithm=["ball_tree","kd_tree","brute"]
+leaf_size=[10,20,30,40]
+p=[1]
+
+
+param_grid={
+    "n_neighbors":n_neighbors,
+    "algorithm":algorithm,
+    "leaf_size":leaf_size,
+    "p":p
+    }
+
+
+knn_estimator_cv=KNeighborsRegressor()
+rs_knn = GridSearchCV(estimator =knn_estimator_cv, param_grid=param_grid,
+                       cv = train_cv_index, verbose=2, 
+                      n_jobs = -1,scoring="neg_mean_absolute_error")
+
+```
+
+Comparing the results with and without optimization.
+
+```{python, results=FALSE}
+scaler1=StandardScaler().fit(train_train,train_target_train)
+train_train_st=scaler1.transform(train_train)
+train_st=scaler1.transform(train.iloc[:,0:75])
+rs_knn.fit(train_st,train_target)
+Knn_pred_2=rs_knn.predict(scaler1.transform(train_validation))
+```
+
+```{python}
+
+metrics.mean_absolute_error(knn_pred,train_target_validation)
+metrics.mean_absolute_error(Knn_pred_2,train_target_validation)
+```
+
+
+### SVM Regression
+
+We define the search space in a similar way, we use *RandomizedSearchCV* to find the best hyperparameters. 
+
+
+```{python}
+
+
 kernel=["linear","poly","rbf","sigmoid"]
 degree=[1,2,3,4]
 C=[x for x in np.linspace(start = 0.1, stop = 10, num = 10)]
@@ -160,78 +218,72 @@ rs_svr = RandomizedSearchCV(estimator = SVR_estimatorS,
     verbose=2, random_state=35, n_jobs = -1,scoring="neg_mean_absolute_error")
 ```
 
-Comparison knn default vs optimized in validation set!
+Again the optimized model behaves better in the validation set.
 
-```{python}
+```{python, results=FALSE}
 rs_svr.fit(train_st,train_target)
 SVR_pred_2=rs_svr.predict(scaler1.transform(train_validation))
+```
 
+
+
+```{python}
 metrics.mean_absolute_error(SVR_pred,train_target_validation)
 metrics.mean_absolute_error(SVR_pred_2,train_target_validation)
 ```
 
-* knn p=1 minkwoski distance equal one  so it is consinstrant wieht mean absolute error.
 
+## Model evaluation.
+
+Now we will evaluate the models in the test set, note that we used the validation set in choosing the hyperparameters so in a way the training process got access to that data.
+
+This code evaluates the model using test data and the optimized tree model.
 
 ```{python}
-#Using KNN
-n_neighbors=[3,4,5,6,7]
-weight=["uniform","distance"]
-algorithm=["ball_tree","kd_tree","brute"]
-leaf_size=[10,20,30,40]
-p=[1]
-
-
-param_grid={
-    "n_neighbors":n_neighbors,
-    #"weight":weight,
-    "algorithm":algorithm,
-    "leaf_size":leaf_size,
-    "p":p
-    }
-
-
-knn_estimator_cv=KNeighborsRegressor()
-
-
-rs_knn = GridSearchCV(estimator =knn_estimator_cv, param_grid=param_grid,
-                       cv = train_cv_index, verbose=2, 
-                      n_jobs = -1,scoring="neg_mean_absolute_error")
-
+tree_test=rf_random.predict(test.iloc[:,0:75])
+v1=metrics.mean_absolute_error(tree_test,test_target)
 ```
 
-Compraring knn default vs optimized
 
-```{python}
-
-rs_knn.fit(train_st,train_target)
-Knn_pred_2=rs_knn.predict(scaler1.transform(train_validation))
-
-metrics.mean_absolute_error(knn_pred,train_target_validation)
-metrics.mean_absolute_error(Knn_pred_2,train_target_validation)
+```{python, include=FALSE}
+tree_test=modelotree.predict(test.iloc[:,0:75])
+v2=metrics.mean_absolute_error(tree_test,test_target)
+tree_test=pipeKNN.predict(test.iloc[:,0:75])
+v3=metrics.mean_absolute_error(tree_test,test_target)
+tree_test=rs_knn.predict(scaler1.transform(test.iloc[:,0:75]))
+v4=metrics.mean_absolute_error(tree_test,test_target)
+tree_test=pipeSVR.predict(test.iloc[:,0:75])
+v5=metrics.mean_absolute_error(tree_test,test_target)
+tree_test=rs_svr.predict(scaler1.transform(test.iloc[:,0:75]))
+v6=metrics.mean_absolute_error(tree_test,test_target)
 ```
 
-Tablita de resumen para mostrar que el mejor es knn con tuning 1743230.4429920174
+The following table is generated using similar code for all models.
 
-## Model evaluation: the method that was selected in model selection will be evaluated
-on the test set
-
-
-```{python}
-tree_test=rf_random.predict(scaler1.transform(test.iloc[:,0:75]))
-metrics.mean_absolute_error(tree_test,test_target)
-
-
+```{R, include=FALSE}
+library(reticulate)
+library(dplyr)
+library(knitr)
+mae_values=c(py$v1,py$v2,py$v3,py$v4,py$v5,py$v6)
+names=c("Tree optimized","Tree not optimized","KNN not optimized","KNN optimized",
+        "SVR not optimized","SVR optimized")
+tabla=data.frame("Method"=names,"MAE"=mae_values)
 ```
-## final model training 
+
+
+```{R, echo=FALSE}
+
+tabla %>% arrange(Method) %>% kable()
+```
+
+
+## Final model training 
+
+The best model in the test set is the optimized KNN, we will train the model with all available data.
 
 ```{python}
-
 totaldata=train.append(test)
-final_model_params=rf_random.best_params_
-#final_scaling=StandardScaler().fit(X=totaldata.iloc[0:75])
-#final_data_transformed=final_scaling.transform(X=totaldata.iloc[0:75])
-modelofinal=DecisionTreeRegressor(**final_model_params,random_state=1)
-modelofinal.fit(totaldata.iloc[:,0:75],totaldata.loc[:,"energy"])
-modelofinal
+final_model_params=rs_knn.best_params_
+finalKNN=make_pipeline(StandardScaler(), KNeighborsRegressor(**final_model_params))
+pipeKNN.fit(totaldata.iloc[:,0:75],totaldata.loc[:,"energy"])
 ```
